@@ -4,16 +4,11 @@ import pandas as pd
 import plotly.express as px
 import io
 import base64
-import os
+
 
 # Initialize the Dash app
 app = dash.Dash(__name__)
 app.title = "Ticket Dashboard"
-server = app.server  # Expose server for deployment
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8050))
-    app.run_server(host="0.0.0.0", port=port)
 
 
 # App layout

@@ -1,0 +1,5 @@
+services:
+  my-flask-app:
+    build_command: |
+      pip install -r requirements.txt
+    command: gunicorn app:app

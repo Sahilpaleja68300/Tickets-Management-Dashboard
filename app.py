@@ -1,24 +1,22 @@
-import dash
-from dash import dcc, html, Input, Output, dash_table, State
-import pandas as pd
-import plotly.express as px
+import os
 import io
 import base64
-
+import pandas as pd
+import plotly.express as px
+from dash import Dash, dcc, html, Input, Output, dash_table, State
 
 # Initialize the Dash app
-app = dash.Dash(__name__)
-app.title = "Ticket Dashboard"
+app = Dash(__name__)
+server = app.server  # Expose Flask server for Gunicorn
 
+app.title = "Ticket Dashboard"
 
 # App layout
 app.layout = html.Div([
-    # Title
     html.Div([
         html.H1("Ticket Management Dashboard", style={'text-align': 'center', 'color': '#ffffff'}),
     ], style={'background-color': '#4CAF50', 'padding': '20px', 'margin-bottom': '20px'}),
 
-    # File upload section
     html.Div([
         dcc.Upload(
             id='upload-data',
@@ -39,7 +37,6 @@ app.layout = html.Div([
         ),
     ]),
 
-    # Filters section
     html.Div([
         html.Div([
             html.Label("Filter by Company", style={'font-weight': 'bold'}),
@@ -60,7 +57,6 @@ app.layout = html.Div([
         ], style={'width': '35%', 'display': 'inline-block', 'padding': '10px'}),
     ], style={'margin-bottom': '20px', 'padding': '10px', 'background-color': '#f0f0f0', 'border-radius': '10px'}),
 
-    # Metrics cards
     html.Div([
         html.Div([
             html.H4("📊 Total Tickets", style={'color': '#4CAF50'}),
@@ -83,7 +79,6 @@ app.layout = html.Div([
         ], className='card'),
     ], style={'display': 'flex', 'justify-content': 'space-around', 'margin-bottom': '20px'}),
 
-    # Main visualizations and table
     html.Div([
         html.Div([
             dcc.Graph(id='tickets-by-employee'),
@@ -110,18 +105,8 @@ app.layout = html.Div([
             ),
         ], style={'width': '48%', 'display': 'inline-block', 'padding': '10px'}),
     ]),
+])
 
-    # Footer section
-    html.Div([
-        html.Div([
-            html.P("Developed by ", style={'font-weight': 'bold', 'font-size': '16px', 'display': 'inline'}),
-            html.A("Sahil Paleja", href="https://www.linkedin.com/in/sahil-paleja", target="_blank",
-                   style={'color': '#4CAF50', 'font-size': '16px', 'font-weight': 'bold', 'display': 'inline'}),
-        ], style={'text-align': 'center', 'padding': '20px', 'background-color': '#333', 'color': 'white'})
-    ], style={'margin-top': '40px'}),
-], style={'font-family': 'Arial, sans-serif', 'background-color': '#f8f9fa', 'padding': '20px'})
-
-# Callback to process the uploaded file and update dropdown options and date picker defaults
 @app.callback(
     [Output('company-filter', 'options'),
      Output('employee-filter', 'options'),
@@ -134,12 +119,10 @@ def update_filters_and_dates(contents, filename):
     if not contents:
         return [], [], None, None
 
-    # Decode the uploaded file
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
     df = pd.read_excel(io.BytesIO(decoded))
 
-    # Parse the Last_Activity column
     df['Last_Activity'] = pd.to_datetime(df['Last_Activity'], errors='coerce')
     valid_dates = df['Last_Activity'].dropna()
 
@@ -153,7 +136,6 @@ def update_filters_and_dates(contents, filename):
 
     return company_options, employee_options, start_date, end_date
 
-# Callback to update the dashboard components
 @app.callback(
     [Output('total-tickets', 'children'),
      Output('closed-tickets', 'children'),
@@ -175,16 +157,13 @@ def update_dashboard(company_filter, employee_filter, start_date, end_date, cont
     if not contents:
         return "0", "0", "0", "0", {}, {}, {}, [], []
 
-    # Decode and process the uploaded file
     content_type, content_string = contents.split(',')
     decoded = base64.b64decode(content_string)
     df = pd.read_excel(io.BytesIO(decoded))
 
-    # Parse the Last_Activity column
     df['Last_Activity'] = pd.to_datetime(df['Last_Activity'], errors='coerce')
     df = df.dropna(subset=['Last_Activity'])
 
-    # Apply filters
     if company_filter:
         df = df[df['Client'].isin(company_filter)]
     if employee_filter:
@@ -192,25 +171,12 @@ def update_dashboard(company_filter, employee_filter, start_date, end_date, cont
     if start_date and end_date:
         df = df[(df['Last_Activity'] >= pd.to_datetime(start_date)) & (df['Last_Activity'] <= pd.to_datetime(end_date))]
 
-    total_tickets = len(df)
-    closed_tickets = len(df[df['Status'] == 'Closed'])
-    new_tickets = len(df[df['Status'] == 'New'])
-    open_tickets = len(df[df['Status'] == 'Open'])
+    return str(len(df)), str(len(df[df['Status'] == 'Closed'])), str(len(df[df['Status'] == 'New'])), str(len(df[df['Status'] == 'Open'])), \
+           px.bar(df.groupby('Assigned_to').size().reset_index(name='Ticket Count'), x='Ticket Count', y='Assigned_to', title='Tickets by Employee', orientation='h'), \
+           px.bar(df.groupby('Client').size().reset_index(name='Ticket Count'), x='Client', y='Ticket Count', title='Tickets by Company'), \
+           px.bar(df.groupby('Ticket_Type').size().reset_index(name='Ticket Count'), x='Ticket_Type', y='Ticket Count', title='Tickets by Product'), \
+           df[['Title']].to_dict('records'), [{'name': 'Title', 'id': 'Title'}]
 
-    employee_fig = px.bar(df.groupby('Assigned_to').size().reset_index(name='Ticket Count'),
-                          x='Ticket Count', y='Assigned_to', title='Tickets by Employee', orientation='h')
-
-    company_fig = px.bar(df.groupby('Client').size().reset_index(name='Ticket Count'),
-                         x='Client', y='Ticket Count', title='Tickets by Company')
-
-    product_fig = px.bar(df.groupby('Ticket_Type').size().reset_index(name='Ticket Count'),
-                         x='Ticket_Type', y='Ticket Count', title='Tickets by Product')
-
-    table_data = df[['Title']].to_dict('records')
-    table_columns = [{'name': 'Title', 'id': 'Title'}]
-
-    return str(total_tickets), str(closed_tickets), str(new_tickets), str(open_tickets), employee_fig, company_fig, product_fig, table_data, table_columns
-
-# Run the app
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    port = int(os.environ.get('PORT', 8080))
+    app.run(debug=False, host='0.0.0.0', port=port)
